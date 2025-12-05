@@ -16,6 +16,14 @@
 
 ## Overview
 
+**✨ Recent Highlights ✨**
+- **Truly Standalone**: Full SAM3 library code now bundled within the repository.
+- **YAML Config**: Training scripts now driven by comprehensive YAML configuration files.
+- **Enhanced LoRA Injection**: Standalone models now support full LoRA injection into Q, K, V projections.
+- **Efficient Checkpointing**: Only `best.pt` and `last.pt` saved to conserve disk space.
+- **Inference Ready**: Dedicated inference scripts for both standalone and real SAM3 models.
+
+
 A standalone LoRA (Low-Rank Adaptation) implementation for efficient fine-tuning of deep learning models. Train with **less than 1% of parameters** while maintaining performance.
 
 ### Why LoRA?
@@ -75,21 +83,33 @@ Test LoRA with a simple model on your data:
 python3 test_standalone.py
 
 # Run standalone training
-python3 train_standalone.py \
-  --data-root ./data \
-  --epochs 5 \
-  --batch-size 2 \
-  --rank 8 \
-  --alpha 16.0 \
-  --save-dir ./checkpoints
+python3 train_standalone.py --config configs/sam3_lora_standalone.yaml
 ```
 
-**Expected output:**
+### Inference
+
+Run inference with your trained LoRA models.
+
+**Standalone Model Inference:**
+```bash
+# Example with the SimpleSegmentationModel
+python3 inference_standalone.py \
+  --config configs/sam3_lora_standalone.yaml \
+  --checkpoint ./checkpoints/best.pt \
+  --image ./data/test_image.jpg \
+  --device cuda
 ```
-✓ LoRA injection: 24,576 trainable params (27.40%)
-✓ Dataset loading: 704 train, 150 validation samples
-✓ Training: 2 epochs completed successfully
-✓ Checkpoints saved: best.pt (1.8MB)
+
+**Real SAM3 Model Inference:**
+```bash
+# Example with the full SAM3 model (requires base_config.yaml or similar)
+python3 inference_real.py \
+  --config configs/minimal_lora_config.yaml \
+  --checkpoint ./checkpoints/best.pt \
+  --image ./data/test_image.jpg \
+  --prompt "a red car" \
+  --output ./output_segmentation.png \
+  --device cuda
 ```
 
 ### Option 2: Python API
@@ -174,27 +194,50 @@ This automatically converts individual JSON files to COCO format.
 
 ### CLI Training
 
-**Basic command:**
+**Basic command (using YAML config):**
 ```bash
-python3 train_standalone.py --data-root ./data --epochs 10
+python3 train_standalone.py --config configs/sam3_lora_standalone.yaml
 ```
 
-**All available options:**
+**All available options (configured in YAML):**
+You can customize all training and LoRA hyperparameters by modifying the YAML configuration file.
+```yaml
+# configs/sam3_lora_standalone.yaml
+dataset:
+  data_root: "./data"
+
+lora:
+  rank: 8
+  alpha: 16.0
+  dropout: 0.1
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "out_proj"
+    - "linear1"
+    - "linear2"
+
+training:
+  epochs: 5
+  batch_size: 2
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  optimizer: "adamw"
+  betas: [0.9, 0.999]
+
+checkpoint:
+  save_dir: "./checkpoints"
+```
+To run with a custom configuration, simply specify your YAML file:
 ```bash
-python3 train_standalone.py \
-  --data-root ./data \           # Path to dataset (with train/ and valid/ folders)
-  --rank 16 \                    # LoRA rank (4, 8, 16, 32)
-  --alpha 32.0 \                 # LoRA alpha scaling
-  --epochs 20 \                  # Number of training epochs
-  --batch-size 4 \               # Batch size
-  --lr 1e-4 \                    # Learning rate
-  --save-dir ./my_checkpoints    # Where to save checkpoints
+python3 train_standalone.py --config my_custom_config.yaml
 ```
 
 **Resume training:**
 ```bash
 python3 train_standalone.py \
-  --data-root ./data \
+  --config configs/sam3_lora_standalone.yaml \
   --resume ./checkpoints/best.pt
 ```
 
@@ -331,7 +374,7 @@ tensorboard --logdir ./checkpoints
 # Watch training progress
 tail -f checkpoints/training.log
 
-# List checkpoints
+# List checkpoints (only best.pt and last.pt are saved)
 ls -lh checkpoints/
 ```
 
@@ -431,7 +474,11 @@ print(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
 
 ```
 sam3_lora/
-├── sam3_lora/                     # Main package
+├── sam3/                          # Full SAM3 library code (bundled for standalone)
+│   ├── assets/                    # BPE vocab, etc.
+│   └── ...                        # Other SAM3 modules
+│
+├── sam3_lora/                     # Main LoRA package
 │   ├── __init__.py                # Package exports
 │   ├── lora/                      # LoRA implementation
 │   │   ├── lora_layer.py          # Core LoRA layers
@@ -451,7 +498,10 @@ sam3_lora/
 │
 ├── setup.py                       # Installation script
 ├── requirements.txt               # Dependencies
-├── train_standalone.py            # Training script
+├── train_standalone.py            # Standalone training script
+├── train.py                       # Full SAM3 LoRA training script
+├── inference_standalone.py        # Standalone LoRA inference script
+├── inference_real.py              # Full SAM3 LoRA inference script
 ├── test_standalone.py             # Test script
 ├── convert_roboflow_to_coco.py    # Data conversion
 └── README.md                      # This file
@@ -567,10 +617,11 @@ This project is licensed under Apache 2.0. See [LICENSE](LICENSE) for details.
 
 ## Status
 
-- ✅ **Standalone Package**: Fully functional, tested, production-ready
-- ✅ **LoRA Implementation**: Complete with all utilities
+- ✅ **Truly Standalone Package**: Full SAM3 library code bundled, tested, production-ready
+- ✅ **LoRA Implementation**: Complete with all utilities and enhanced injection
 - ✅ **Data Loading**: COCO format support
-- ✅ **Training**: Standalone trainer working
+- ✅ **Training**: Standalone and real SAM3 training working with YAML config
+- ✅ **Inference**: Standalone and real SAM3 inference scripts available
 - ✅ **Documentation**: Comprehensive guides and examples
 
 ---
