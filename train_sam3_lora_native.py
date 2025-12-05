@@ -334,7 +334,13 @@ class SAM3TrainerNative:
                 indices = self.matcher(outputs, targets)
 
                 # Calculate actual number of ground truth boxes for normalization
-                num_boxes = targets['boxes'].shape[0] if 'boxes' in targets and targets['boxes'].numel() > 0 else 1
+                # targets['num_boxes'] contains count per image in batch, sum them up
+                if 'num_boxes' in targets and isinstance(targets['num_boxes'], torch.Tensor):
+                    num_boxes = targets['num_boxes'].sum().item()
+                elif 'boxes' in targets and targets['boxes'].numel() > 0:
+                    num_boxes = targets['boxes'].shape[0]
+                else:
+                    num_boxes = 1
                 num_boxes = max(num_boxes, 1)  # Avoid division by zero
 
                 # Compute Losses
@@ -389,7 +395,13 @@ class SAM3TrainerNative:
                         losses = {}
 
                         # Calculate actual number of ground truth boxes for normalization
-                        num_boxes = targets['boxes'].shape[0] if 'boxes' in targets and targets['boxes'].numel() > 0 else 1
+                        # targets['num_boxes'] contains count per image in batch, sum them up
+                        if 'num_boxes' in targets and isinstance(targets['num_boxes'], torch.Tensor):
+                            num_boxes = targets['num_boxes'].sum().item()
+                        elif 'boxes' in targets and targets['boxes'].numel() > 0:
+                            num_boxes = targets['boxes'].shape[0]
+                        else:
+                            num_boxes = 1
                         num_boxes = max(num_boxes, 1)  # Avoid division by zero
 
                         l_cls = self.criterion_cls.get_loss(outputs, targets, indices, num_boxes=num_boxes)

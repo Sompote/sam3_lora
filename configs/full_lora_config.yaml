@@ -37,7 +37,7 @@ training:
   batch_size: 3           # Smaller batch due to more parameters
   num_workers: 4
 
-  learning_rate: 5e-5        # Lower LR for stability
+  learning_rate: 1e-5        # Much lower LR for initial stability
   weight_decay: 0.01
   adam_beta1: 0.9
   adam_beta2: 0.999
