@@ -50,7 +50,7 @@ checkpoints/
 dumps/
 
 # Data
-data/
+/data/
 datasets/
 *.jpg
 *.jpeg

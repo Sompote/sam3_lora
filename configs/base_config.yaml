@@ -30,9 +30,9 @@ lora:
 # Training settings
 training:
   # Data
-  train_data_path: "data/train"
-  val_data_path: "data/val"
-  batch_size: 4
+  train_data_path: "/workspace/sam3_lora/data/train"
+  val_data_path: "/workspace/sam3_lora/data/valid"
+  batch_size: 20
   num_workers: 4
 
   # Optimization

@@ -1,0 +1,27 @@
+# SAM3 LoRA Standalone Training Configuration
+
+dataset:
+  data_root: "./data"
+
+lora:
+  rank: 8
+  alpha: 16.0
+  dropout: 0.1
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "out_proj"
+    - "linear1"
+    - "linear2"
+
+training:
+  epochs: 100
+  batch_size: 10
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  optimizer: "adamw"
+  betas: [0.9, 0.999]
+
+checkpoint:
+  save_dir: "./checkpoints"

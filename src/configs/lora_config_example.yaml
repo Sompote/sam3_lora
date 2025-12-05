@@ -1,0 +1,139 @@
+# LoRA Fine-tuning Configuration for SAM3
+# This config follows the same structure as SAM3's training configs
+
+# @package _global_
+defaults:
+  - _self_
+
+# ============================================================================
+# Paths Configuration (Change this to your own paths)
+# ============================================================================
+paths:
+  data_root: /workspace/sam3_lora/data
+  experiment_log_dir: /workspace/sam3_lora/experiments
+  bpe_path: /workspace/sam3/assets/bpe_simple_vocab_16e6.txt.gz  # Path to BPE vocab file
+  sam3_checkpoint: null  # Path to pretrained SAM3 checkpoint (set to null if not available)
+
+# ============================================================================
+# LoRA Configuration
+# ============================================================================
+lora:
+  # LoRA hyperparameters
+  rank: 8  # Rank of LoRA matrices (higher = more capacity, more parameters)
+  alpha: 16.0  # LoRA scaling factor (typically 2*rank)
+  dropout: 0.1  # Dropout for LoRA layers
+
+  # Target modules to apply LoRA
+  # Options: 'q_proj', 'k_proj', 'v_proj', 'out_proj', 'linear1', 'linear2', 'all'
+  target_modules:
+    - q_proj      # Query projection in attention
+    - k_proj      # Key projection in attention
+    - v_proj      # Value projection in attention
+    - out_proj    # Output projection in attention
+    - linear1     # First FFN layer
+    - linear2     # Second FFN layer
+
+  # Fine-tuning strategy
+  freeze_backbone: true  # Freeze vision backbone
+  freeze_text_encoder: true  # Freeze text encoder
+  freeze_decoder: false  # Apply LoRA to decoder
+  freeze_encoder: false  # Apply LoRA to encoder
+
+# ============================================================================
+# Dataset Configuration
+# ============================================================================
+dataset:
+  # Data paths
+  train_img_folder: ${paths.data_root}/train
+  train_ann_file: ${paths.data_root}/train/_annotations.coco.json
+  val_img_folder: ${paths.data_root}/valid
+  val_ann_file: ${paths.data_root}/valid/_annotations.coco.json
+
+  # Data loading
+  num_workers: 4
+  pin_memory: true
+
+  # Image processing
+  resolution: 1008
+  max_ann_per_img: 200
+
+  # Augmentation
+  enable_augmentation: true
+  box_noise_std: 0.1
+  box_noise_max: 20
+
+# ============================================================================
+# Training Configuration
+# ============================================================================
+training:
+  # Basic training params
+  max_epochs: 20
+  batch_size: 2
+  gradient_accumulation_steps: 1
+  val_epoch_freq: 5
+  skip_first_val: false
+
+  # Optimizer
+  optimizer: adamw
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+  # Learning rate schedule
+  scheduler: inverse_sqrt
+  warmup_steps: 100
+  timescale: 1000
+  cooldown_steps: 50
+
+  # Gradient clipping
+  max_grad_norm: 0.1
+
+  # Mixed precision
+  use_amp: true
+  amp_dtype: bfloat16
+
+  # Loss configuration
+  enable_segmentation: false  # Set to true if training with masks
+  loss_weights:
+    bbox: 5.0
+    giou: 2.0
+    ce: 20.0
+    presence: 20.0
+
+# ============================================================================
+# Checkpointing
+# ============================================================================
+checkpoint:
+  save_dir: ${paths.experiment_log_dir}/checkpoints
+  save_freq: 5  # Save every N epochs
+  save_best: true  # Save best model based on validation metric
+  resume_from: null  # Path to checkpoint to resume from
+
+# ============================================================================
+# Logging
+# ============================================================================
+logging:
+  log_dir: ${paths.experiment_log_dir}/logs
+  log_freq: 10  # Log every N iterations
+  use_tensorboard: true
+  use_wandb: false
+  wandb_project: sam3_lora
+  wandb_run_name: null
+
+# ============================================================================
+# Distributed Training
+# ============================================================================
+distributed:
+  backend: nccl
+  num_gpus: 1
+  num_nodes: 1
+  find_unused_parameters: true
+
+# ============================================================================
+# Evaluation
+# ============================================================================
+evaluation:
+  metrics:
+    - coco_bbox  # COCO bbox mAP
+  iou_thresholds: [0.5, 0.75]
+  max_dets: 100
