@@ -44,10 +44,10 @@ lora:
 # ============================================================================
 dataset:
   # Data paths
-  train_img_folder: ${paths.data_root}/train
-  train_ann_file: ${paths.data_root}/train/_annotations.coco.json
-  val_img_folder: ${paths.data_root}/valid
-  val_ann_file: ${paths.data_root}/valid/_annotations.coco.json
+  train_img_folder: /workspace/sam3_lora/data/train
+  train_ann_file: /workspace/sam3_lora/data/train/_annotations.coco.json
+  val_img_folder: /workspace/sam3_lora/data/valid
+  val_ann_file: /workspace/sam3_lora/data/valid/_annotations.coco.json
 
   # Data loading
   num_workers: 4
@@ -67,10 +67,10 @@ dataset:
 # ============================================================================
 training:
   # Basic training params
-  max_epochs: 20
-  batch_size: 2
+  max_epochs: 1
+  batch_size: 1
   gradient_accumulation_steps: 1
-  val_epoch_freq: 5
+  val_epoch_freq: 1
   skip_first_val: false
 
   # Optimizer
@@ -104,8 +104,8 @@ training:
 # Checkpointing
 # ============================================================================
 checkpoint:
-  save_dir: ${paths.experiment_log_dir}/checkpoints
-  save_freq: 5  # Save every N epochs
+  save_dir: /workspace/sam3_lora/experiments/checkpoints
+  save_freq: 1  # Save every N epochs
   save_best: true  # Save best model based on validation metric
   resume_from: null  # Path to checkpoint to resume from
 
@@ -113,7 +113,7 @@ checkpoint:
 # Logging
 # ============================================================================
 logging:
-  log_dir: ${paths.experiment_log_dir}/logs
+  log_dir: /workspace/sam3_lora/experiments/logs
   log_freq: 10  # Log every N iterations
   use_tensorboard: true
   use_wandb: false
