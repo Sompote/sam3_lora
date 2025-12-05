@@ -8,7 +8,7 @@
 
 **Train SAM3 segmentation models with 99% fewer trainable parameters**
 
-[Quick Start](#quick-start) • [Training](#training) • [Inference](#inference) • [Configuration](#configuration)
+[Quick Start](#quick-start) • [Training](#training) • [Inference](#inference) • [Crack Detection Example](#real-world-example-concrete-crack-detection) • [Configuration](#configuration)
 
 </div>
 
@@ -25,6 +25,7 @@ Fine-tune the SAM3 (Segment Anything Model 3) using **LoRA (Low-Rank Adaptation)
 - ✅ **Fast Iterations**: Less memory = faster training
 - ✅ **Easy to Use**: YAML configs + simple CLI
 - ✅ **Production Ready**: Complete train + inference pipeline
+- ✅ **Real Applications**: Crack detection, defect inspection, and more
 
 ### What is LoRA?
 
@@ -96,6 +97,16 @@ If you see errors, review the [Troubleshooting](#troubleshooting) section.
 
 > **⚠️ Important**: Make sure you've completed the [Installation](#installation) steps, including Hugging Face login, before proceeding.
 
+**Example Result**: Train a model to detect concrete cracks with just ~1% trainable parameters!
+
+<div align="center">
+<img src="asset/output.png" alt="Example: Concrete Crack Detection" width="600">
+<br>
+<em>Detection: "concrete crack" with 0.32 confidence • Precise segmentation mask</em>
+</div>
+
+<br>
+
 ### 1. Prepare Your Data
 
 Organize your dataset with images and annotations:
@@ -159,24 +170,23 @@ Epoch 2/20 - Validation Loss: 0.290000
 
 ```bash
 # Basic inference (automatically uses best model)
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image test_image.jpg \
   --output predictions.png
 
 # With text prompt for better accuracy
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image test_image.jpg \
   --prompt "yellow school bus" \
   --output predictions.png
 
-# Or specify weights explicitly
-python3 inference_lora.py \
+# Multiple prompts to detect different objects
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
-  --weights outputs/sam3_lora_full/best_lora_weights.pt \
   --image test_image.jpg \
-  --prompt "person wearing red hat" \
+  --prompt "crack" "defect" "damage" \
   --output predictions.png
 ```
 
@@ -269,33 +279,33 @@ During training, two models are automatically saved:
 
 ## Inference
 
-Run inference on new images using your trained LoRA model. Text prompts are **highly recommended** for better accuracy and to guide the model toward specific objects.
+Run inference on new images using your trained LoRA model. The new `infer_sam.py` script is based on official SAM3 patterns and supports **multiple text prompts** for better accuracy.
 
 ### Command Line
 
 ```bash
 # Basic inference (automatically uses best model)
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image path/to/image.jpg \
   --output predictions.png
 
 # With text prompt (recommended for better accuracy)
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image path/to/image.jpg \
   --prompt "yellow school bus" \
   --output predictions.png
 
-# Multiple object types with text prompt
-python3 inference_lora.py \
+# Multiple prompts to detect different object types
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image street_scene.jpg \
-  --prompt "car" \
-  --output car_segmentation.png
+  --prompt "car" "person" "bus" \
+  --output segmentation.png
 
 # Use last epoch model instead
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/last_lora_weights.pt \
   --image path/to/image.jpg \
@@ -303,30 +313,47 @@ python3 inference_lora.py \
   --output predictions.png
 
 # With custom confidence threshold
-python3 inference_lora.py \
+python3 infer_sam.py \
   --config configs/full_lora_config.yaml \
   --image path/to/image.jpg \
   --prompt "building" \
-  --threshold 0.7 \
+  --threshold 0.3 \
   --output predictions.png
+
+# Mask-only visualization (no boxes)
+python3 infer_sam.py \
+  --config configs/full_lora_config.yaml \
+  --image path/to/image.jpg \
+  --prompt "crack" \
+  --no-boxes \
+  --output masks_only.png
 ```
 
 ### Text Prompts
 
-Text prompts help guide the model to segment specific objects more accurately:
+Text prompts help guide the model to segment specific objects more accurately. **New feature**: You can now use multiple prompts in a single command!
 
-**Good text prompts:**
+**Single prompt examples:**
 - `"yellow school bus"` - Specific color and object type
 - `"person wearing red hat"` - Object with distinctive features
 - `"car"` - Simple, clear object type
-- `"dog sitting on grass"` - Object with context
+- `"crack"` - For defect detection
 - `"building with glass windows"` - Object with distinguishing features
+
+**Multiple prompt examples:**
+```bash
+# Detect different defect types
+--prompt "crack" "spalling" "corrosion"
+
+# Detect multiple objects in street scenes
+--prompt "car" "person" "traffic sign"
+```
 
 **Tips for better prompts:**
 - Be specific but concise
-- Include distinctive colors or features
+- Include distinctive colors or features when relevant
 - Use natural language descriptions
-- Avoid overly complex or ambiguous descriptions
+- For multiple prompts, order from most to least important
 - Match the vocabulary to your training data
 
 ### Inference Parameters
@@ -336,43 +363,54 @@ Text prompts help guide the model to segment specific objects more accurately:
 | `--config` | Path to training config file | `configs/full_lora_config.yaml` | Required |
 | `--weights` | Path to LoRA weights (optional) | `outputs/sam3_lora_full/best_lora_weights.pt` | Auto-detected |
 | `--image` | Input image path | `test_image.jpg` | Required |
-| `--prompt` | Text prompt for segmentation | `"yellow school bus"` | None (uses "object") |
+| `--prompt` | One or more text prompts | `"crack"` or `"crack" "defect"` | `"object"` |
 | `--output` | Output visualization path | `predictions.png` | `output.png` |
-| `--threshold` | Confidence threshold (0.0-1.0) | `0.7` | `0.5` |
+| `--threshold` | Confidence threshold (0.0-1.0) | `0.3` | `0.5` |
+| `--resolution` | Input resolution | `1008` | `1008` |
+| `--no-boxes` | Don't show bounding boxes | - | False |
+| `--no-masks` | Don't show segmentation masks | - | False |
 
 ### Python API
 
 ```python
-from inference_lora import SAM3LoRAInference
+from infer_sam import SAM3LoRAInference
 
 # Initialize inference engine
 inferencer = SAM3LoRAInference(
     config_path="configs/full_lora_config.yaml",
-    weights_path="outputs/sam3_lora_full/lora_weights.pt"
+    weights_path="outputs/sam3_lora_full/best_lora_weights.pt",
+    detection_threshold=0.5
 )
 
-# Run prediction without text prompt
-predictions = inferencer.predict("image.jpg")
-
-# Run prediction with text prompt (recommended)
+# Run prediction with single text prompt
 predictions = inferencer.predict(
     image_path="image.jpg",
-    text_prompt="yellow school bus"
+    text_prompts=["yellow school bus"]
+)
+
+# Run prediction with multiple text prompts
+predictions = inferencer.predict(
+    image_path="image.jpg",
+    text_prompts=["crack", "defect", "damage"]
 )
 
 # Visualize results
-inferencer.visualize_predictions(
+inferencer.visualize(
     predictions,
     output_path="output.png",
-    confidence_threshold=0.5,
-    text_prompt="yellow school bus"  # Optional: shows prompt in title
+    show_boxes=True,
+    show_masks=True
 )
 
-# Access raw predictions
-boxes = predictions['boxes']        # Bounding boxes [N, 4]
-scores = predictions['scores']      # Confidence scores [N, num_classes]
-masks = predictions['masks']        # Segmentation masks [N, H, W]
-original_size = predictions['original_size']  # (width, height)
+# Access predictions for each prompt
+for idx, prompt in enumerate(["crack", "defect"]):
+    result = predictions[idx]
+    print(f"Prompt '{result['prompt']}':")
+    print(f"  Detections: {result['num_detections']}")
+    if result['num_detections'] > 0:
+        print(f"  Boxes: {result['boxes'].shape}")      # [N, 4] in xyxy format
+        print(f"  Scores: {result['scores'].shape}")    # [N]
+        print(f"  Masks: {result['masks'].shape}")      # [N, H, W]
 ```
 
 ---
@@ -435,6 +473,48 @@ lora:
 
 ---
 
+## Real-World Example: Concrete Crack Detection
+
+SAM3-LoRA excels at detecting structural defects like cracks in concrete. Here's a real example:
+
+<div align="center">
+<img src="asset/output.png" alt="Concrete Crack Detection" width="800">
+</div>
+
+**Detection Results:**
+- **Prompt**: "concrete crack"
+- **Confidence**: 0.32 (using threshold 0.3)
+- **Segmentation**: Precise mask following the crack pattern
+- **Application**: Infrastructure inspection, structural health monitoring
+
+**Run this example:**
+```bash
+# Detect cracks in concrete structures
+python3 infer_sam.py \
+  --config configs/full_lora_config.yaml \
+  --image path/to/concrete.jpg \
+  --prompt "concrete crack" \
+  --threshold 0.3 \
+  --output crack_detection.png
+
+# Detect multiple defect types
+python3 infer_sam.py \
+  --config configs/full_lora_config.yaml \
+  --image path/to/concrete.jpg \
+  --prompt "crack" "spalling" "corrosion" \
+  --threshold 0.3 \
+  --output defect_analysis.png
+```
+
+**Use Cases:**
+- 🏗️ Civil engineering inspection
+- 🌉 Bridge and infrastructure monitoring
+- 🏢 Building maintenance
+- 🛣️ Road surface analysis
+- 🏭 Industrial facility assessment
+
+---
+
 ## Examples
 
 ### Example 1: Quick Test (5 Epochs)
@@ -463,19 +543,19 @@ EOF
 # Train
 python3 train_sam3_lora_native.py --config configs/quick_test.yaml
 
-# Inference without text prompt
-python3 inference_lora.py \
+# Inference with text prompt
+python3 infer_sam.py \
   --config configs/quick_test.yaml \
-  --weights outputs/quick_test/lora_weights.pt \
-  --image test.jpg \
-  --output result.png
-
-# Inference with text prompt (better results)
-python3 inference_lora.py \
-  --config configs/quick_test.yaml \
-  --weights outputs/quick_test/lora_weights.pt \
+  --weights outputs/quick_test/best_lora_weights.pt \
   --image test.jpg \
   --prompt "car" \
+  --output result.png
+
+# Multiple prompts
+python3 infer_sam.py \
+  --config configs/quick_test.yaml \
+  --image test.jpg \
+  --prompt "car" "person" "bus" \
   --output result.png
 ```
 
@@ -525,13 +605,13 @@ trainer.train()
 ### Example 4: Batch Inference with Text Prompts
 
 ```python
-from inference_lora import SAM3LoRAInference
+from infer_sam import SAM3LoRAInference
 from pathlib import Path
 
 # Initialize once
 inferencer = SAM3LoRAInference(
     config_path="configs/full_lora_config.yaml",
-    weights_path="outputs/sam3_lora_full/lora_weights.pt"
+    weights_path="outputs/sam3_lora_full/best_lora_weights.pt"
 )
 
 # Process multiple images with same prompt
@@ -539,37 +619,35 @@ image_dir = Path("test_images")
 output_dir = Path("predictions")
 output_dir.mkdir(exist_ok=True)
 
-text_prompt = "car"  # Segment cars in all images
-
 for img_path in image_dir.glob("*.jpg"):
     predictions = inferencer.predict(
         str(img_path),
-        text_prompt=text_prompt
+        text_prompts=["car"]
     )
 
     output_path = output_dir / f"{img_path.stem}_pred.png"
-    inferencer.visualize_predictions(
+    inferencer.visualize(
         predictions,
-        str(output_path),
-        text_prompt=text_prompt
+        str(output_path)
     )
 
     print(f"✓ Processed {img_path.name}")
 
-# Or process with different prompts per image
-image_prompts = {
-    "street1.jpg": "yellow school bus",
-    "street2.jpg": "person with red hat",
-    "parking.jpg": "car"
-}
+# Process with multiple prompts per image
+for img_path in image_dir.glob("*.jpg"):
+    # Detect multiple object types at once
+    predictions = inferencer.predict(
+        str(img_path),
+        text_prompts=["crack", "defect", "damage"]
+    )
 
-for img_name, prompt in image_prompts.items():
-    img_path = image_dir / img_name
-    if img_path.exists():
-        predictions = inferencer.predict(str(img_path), text_prompt=prompt)
-        output_path = output_dir / f"{img_path.stem}_{prompt.replace(' ', '_')}.png"
-        inferencer.visualize_predictions(predictions, str(output_path), text_prompt=prompt)
-        print(f"✓ Processed {img_name} with prompt '{prompt}'")
+    output_path = output_dir / f"{img_path.stem}_multi.png"
+    inferencer.visualize(predictions, str(output_path))
+
+    # Print summary
+    for idx in range(3):
+        result = predictions[idx]
+        print(f"  {result['prompt']}: {result['num_detections']} detections")
 ```
 
 ---
@@ -648,7 +726,9 @@ sam3_lora/
 ├── sam3/                          # SAM3 model library
 ├── lora_layers.py                 # LoRA implementation
 ├── train_sam3_lora_native.py      # Training script
-├── inference_lora.py              # Inference script
+├── infer_sam.py                   # Inference script (recommended)
+├── inference_lora.py              # Legacy inference script
+├── README_INFERENCE.md            # Detailed inference guide
 └── README.md                      # This file
 ```
 

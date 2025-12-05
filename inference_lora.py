@@ -186,16 +186,9 @@ class SAM3LoRAInference:
         pred_logits = outputs['pred_logits']  # [batch, num_queries, num_classes]
         pred_boxes = outputs['pred_boxes']    # [batch, num_queries, 4]
         pred_masks = outputs.get('pred_masks', None)  # [batch, num_queries, H, W]
-        presence_logit = outputs.get('presence_logit_dec', None)  # [batch, num_queries]
 
         # Get confidence scores (sigmoid of logits)
         out_probs = pred_logits.sigmoid()
-
-        # IMPORTANT: Multiply by presence score to filter out "no object" predictions
-        if presence_logit is not None:
-            presence_score = presence_logit.sigmoid().unsqueeze(-1)  # [batch, num_queries, 1]
-            out_probs = out_probs * presence_score
-            print(f"\n✅ Using presence scores to filter predictions")
 
         # Convert to numpy for easier handling
         scores = out_probs.cpu().numpy()
@@ -273,6 +266,12 @@ class SAM3LoRAInference:
             y1 = cy - h / 2
             x2 = cx + w / 2
             y2 = cy + h / 2
+
+            # Clamp normalized coordinates to [0, 1] range
+            x1 = max(0.0, min(1.0, x1))
+            y1 = max(0.0, min(1.0, y1))
+            x2 = max(0.0, min(1.0, x2))
+            y2 = max(0.0, min(1.0, y2))
 
             # Scale to original image size
             orig_w, orig_h = predictions['original_size']
