@@ -9,8 +9,8 @@ model:
 
 # LoRA settings
 lora:
-  rank: 8                   # Higher rank for more capacity
-  alpha: 32                  # 2x rank
+  rank: 32                   # Higher rank for more capacity
+  alpha: 64                  # 2x rank
   dropout: 0.1               # Some dropout for regularization
 
   # Target more modules including MLP layers
@@ -32,9 +32,9 @@ lora:
 
 # Training settings
 training:
-  train_data_path: "data/train"
-  val_data_path: "/workspace/sam3_lora/data/valid"
-  batch_size: 3           # Smaller batch due to more parameters
+  train_data_path: "/workspace/SAM3_LoRA/data/train"
+  val_data_path: "/workspace/SAM3_LoRA/data/valid"
+  batch_size: 6           # Smaller batch due to more parameters
   num_workers: 4
 
   learning_rate: 1e-5        # Much lower LR for initial stability

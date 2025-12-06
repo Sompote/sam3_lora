@@ -28,8 +28,8 @@ from torchvision.transforms import v2
 class SimpleSAM3Dataset(Dataset):
     def __init__(self, root_dir, image_set="train"):
         self.root_dir = Path(root_dir) / image_set
-        self.images_dir = self.root_dir / "images"
-        self.annotations_dir = self.root_dir / "annotations"
+        self.images_dir = self.root_dir
+        self.annotations_dir = self.root_dir
         
         self.image_files = sorted(list(self.images_dir.glob("*.jpg")) + 
                                   list(self.images_dir.glob("*.png")))
@@ -257,21 +257,28 @@ class SAM3TrainerNative:
         )
         
     def train(self):
-        train_ds = SimpleSAM3Dataset("data", image_set="train")
+        train_data_path = self.config["training"]["train_data_path"]
+        train_path = Path(train_data_path)
+        train_ds = SimpleSAM3Dataset(root_dir=train_path.parent, image_set=train_path.name)
 
-        # Check if validation data exists (try both "valid" and "val")
+        # Check if validation data exists
         has_validation = False
         val_ds = None
-
-        for val_name in ["valid", "val"]:
+        
+        val_data_path = self.config["training"].get("val_data_path")
+        if val_data_path:
             try:
-                val_ds = SimpleSAM3Dataset("data", image_set=val_name)
+                val_path = Path(val_data_path)
+                val_ds = SimpleSAM3Dataset(root_dir=val_path.parent, image_set=val_path.name)
                 if len(val_ds) > 0:
                     has_validation = True
-                    print(f"Found validation data in data/{val_name}/")
-                    break
-            except:
-                continue
+                    print(f"Found validation data in {val_data_path}")
+                else:
+                    print(f"Validation data path specified, but dataset at {val_data_path} is empty.")
+                    val_ds = None
+            except Exception as e:
+                print(f"Could not load validation data from {val_data_path}: {e}")
+                val_ds = None
 
         if not has_validation:
             val_ds = None
