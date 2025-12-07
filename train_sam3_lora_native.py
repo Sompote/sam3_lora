@@ -885,13 +885,16 @@ class SAM3TrainerNative:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         for epoch in range(epochs):
+            # Track training losses for this epoch
+            train_losses = []
+
             pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
             for batch_dict in pbar:
                 input_batch = batch_dict["input"]
-                
+
                 # Move to device
                 input_batch = move_to_device(input_batch, self.device)
-                
+
                 # Forward pass
                 # outputs_list is SAM3Output, we need to pass the whole thing to loss_wrapper
                 outputs_list = self.model(input_batch)
@@ -935,7 +938,12 @@ class SAM3TrainerNative:
                 total_loss.backward()
                 self.optimizer.step()
 
+                # Track training loss
+                train_losses.append(total_loss.item())
                 pbar.set_postfix({"loss": total_loss.item()})
+
+            # Calculate average training loss for this epoch
+            avg_train_loss = sum(train_losses) / len(train_losses) if train_losses else 0.0
 
             # Validation (only compute loss - no metrics, like SAM3)
             if has_validation and val_loader is not None:
