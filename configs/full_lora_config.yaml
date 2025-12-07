@@ -32,8 +32,7 @@ lora:
 
 # Training settings
 training:
-  train_data_path: "/workspace/data/train"
-  val_data_path: "/workspace/data/valid"
+  data_dir: "/workspace/data2"  # Root directory containing train/valid/test folders with COCO annotations
   batch_size: 8         # Smaller batch due to more parameters
   num_workers: 1
 

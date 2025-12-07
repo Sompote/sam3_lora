@@ -33,48 +33,75 @@ from pycocotools.cocoeval import COCOeval
 import pycocotools.mask as mask_utils
 from sam3.train.masks_ops import rle_encode
 
-class SimpleSAM3Dataset(Dataset):
-    def __init__(self, root_dir, image_set="train"):
-        self.root_dir = Path(root_dir) / image_set
-        self.images_dir = self.root_dir
-        self.annotations_dir = self.root_dir
-        
-        self.image_files = sorted(list(self.images_dir.glob("*.jpg")) + 
-                                  list(self.images_dir.glob("*.png")))
-        print(f"Loaded {len(self.image_files)} images from {self.images_dir}")
-        
+class COCOSegmentDataset(Dataset):
+    """Dataset class for COCO format segmentation data"""
+    def __init__(self, data_dir, split="train"):
+        """
+        Args:
+            data_dir: Root directory containing train/valid/test folders
+            split: One of 'train', 'valid', 'test'
+        """
+        self.data_dir = Path(data_dir)
+        self.split = split
+        self.split_dir = self.data_dir / split
+
+        # Load COCO annotations
+        ann_file = self.split_dir / "_annotations.coco.json"
+        if not ann_file.exists():
+            raise FileNotFoundError(f"COCO annotation file not found: {ann_file}")
+
+        with open(ann_file, 'r') as f:
+            self.coco_data = json.load(f)
+
+        # Build index: image_id -> image info
+        self.images = {img['id']: img for img in self.coco_data['images']}
+        self.image_ids = sorted(list(self.images.keys()))
+
+        # Build index: image_id -> list of annotations
+        self.img_to_anns = {}
+        for ann in self.coco_data['annotations']:
+            img_id = ann['image_id']
+            if img_id not in self.img_to_anns:
+                self.img_to_anns[img_id] = []
+            self.img_to_anns[img_id].append(ann)
+
+        # Load categories
+        self.categories = {cat['id']: cat['name'] for cat in self.coco_data['categories']}
+        print(f"Loaded COCO dataset: {split} split")
+        print(f"  Images: {len(self.image_ids)}")
+        print(f"  Annotations: {len(self.coco_data['annotations'])}")
+        print(f"  Categories: {self.categories}")
+
         self.resolution = 1008
         self.transform = v2.Compose([
-            v2.ToImage(), 
+            v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 
     def __len__(self):
-        return len(self.image_files)
+        return len(self.image_ids)
 
     def __getitem__(self, idx):
-        img_path = self.image_files[idx]
-        ann_path = self.annotations_dir / f"{img_path.stem}.json"
-        
+        img_id = self.image_ids[idx]
+        img_info = self.images[img_id]
+
         # Load image
+        img_path = self.split_dir / img_info['file_name']
         pil_image = PILImage.open(img_path).convert("RGB")
         orig_w, orig_h = pil_image.size
-        
+
         # Resize image
         pil_image = pil_image.resize((self.resolution, self.resolution), PILImage.BILINEAR)
-        
+
         # Transform to tensor
         image_tensor = self.transform(pil_image)
-        
-        # Load annotation
-        with open(ann_path, "r") as f:
-            ann_data = json.load(f)
+
+        # Get annotations for this image
+        annotations = self.img_to_anns.get(img_id, [])
 
         objects = []
-
-        # Handle the actual annotation format: {"annotations": [{"bbox": [...], "segmentation": {...}}]}
-        annotations = ann_data.get("annotations", [])
+        object_class_names = []
 
         # Scale factors
         scale_w = self.resolution / orig_w
@@ -85,6 +112,11 @@ class SimpleSAM3Dataset(Dataset):
             bbox_coco = ann.get("bbox", None)
             if bbox_coco is None:
                 continue
+
+            # Get class name from category_id
+            category_id = ann.get("category_id", 0)
+            class_name = self.categories.get(category_id, "object")
+            object_class_names.append(class_name)
 
             # Convert from COCO [x, y, w, h] to [x1, y1, x2, y2]
             x, y, w, h = bbox_coco
@@ -99,31 +131,40 @@ class SimpleSAM3Dataset(Dataset):
             # IMPORTANT: Normalize boxes to [0, 1] range (required by SAM3 loss functions)
             box_tensor /= self.resolution
 
-            # Handle segmentation mask (RLE encoded)
+            # Handle segmentation mask (polygon or RLE format)
             segment = None
             segmentation = ann.get("segmentation", None)
-            if segmentation and isinstance(segmentation, dict):
-                # RLE format: {"counts": "...", "size": [h, w]}
+
+            if segmentation:
                 try:
-                    from pycocotools import mask as mask_utils
-                    # Decode RLE to binary mask
-                    mask_np = mask_utils.decode(segmentation)  # Returns [H, W] binary mask
+                    # Check if it's RLE format (dict) or polygon format (list)
+                    if isinstance(segmentation, dict):
+                        # RLE format: {"counts": "...", "size": [h, w]}
+                        mask_np = mask_utils.decode(segmentation)
+                    elif isinstance(segmentation, list):
+                        # Polygon format: [[x1, y1, x2, y2, ...], ...]
+                        # Convert polygon to RLE, then decode
+                        rles = mask_utils.frPyObjects(segmentation, orig_h, orig_w)
+                        rle = mask_utils.merge(rles)
+                        mask_np = mask_utils.decode(rle)
+                    else:
+                        print(f"Warning: Unknown segmentation format: {type(segmentation)}")
+                        segment = None
+                        continue
 
                     # Resize mask to model resolution
-                    mask_t = torch.from_numpy(mask_np).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
+                    mask_t = torch.from_numpy(mask_np).float().unsqueeze(0).unsqueeze(0)
                     mask_t = torch.nn.functional.interpolate(
                         mask_t,
                         size=(self.resolution, self.resolution),
                         mode="nearest"
                     )
                     segment = mask_t.squeeze() > 0.5  # [1008, 1008] boolean tensor
-                except ImportError:
-                    print("Warning: pycocotools not installed, skipping mask")
-                    segment = None
+
                 except Exception as e:
-                    print(f"Warning: Error decoding mask: {e}")
+                    print(f"Warning: Error processing mask for image {img_id}, ann {i}: {e}")
                     segment = None
-            
+
             obj = Object(
                 bbox=box_tensor,
                 area=(box_tensor[2]-box_tensor[0])*(box_tensor[3]-box_tensor[1]),
@@ -131,37 +172,46 @@ class SimpleSAM3Dataset(Dataset):
                 segment=segment
             )
             objects.append(obj)
-            
+
         image_obj = Image(
             data=image_tensor,
             objects=objects,
             size=(self.resolution, self.resolution)
         )
-        
+
         # Construct Query
-        # We create a single FindQuery that targets all objects
+        # Use generic class-agnostic prompt for better generalization
+        # SAM models work better with simple generic terms
         object_ids = [obj.object_id for obj in objects]
-        
+
+        # Use class-agnostic prompt - SAM models are trained to detect generic "things"
+        # This works better than domain-specific terms like "cracks", "joint" etc.
+        if len(objects) > 0:
+            query_text = "object"
+        else:
+            # Skip images with no annotations
+            query_text = "object"
+
         query = FindQueryLoaded(
-            query_text="object", # Generic text prompt
-            image_id=0, # Relative to this datapoint (only 1 image)
+            query_text=query_text,
+            image_id=0,
             object_ids_output=object_ids,
             is_exhaustive=True,
             query_processing_order=0,
             inference_metadata=InferenceMetadata(
-                coco_image_id=idx,
-                original_image_id=idx,
+                coco_image_id=img_id,
+                original_image_id=img_id,
                 original_category_id=0,
-                original_size=(orig_h, orig_w), # Keep original size here? Or resized? Usually original.
+                original_size=(orig_h, orig_w),
                 object_id=-1,
                 frame_index=-1
             )
         )
-        
+
         return Datapoint(
             find_queries=[query],
             images=[image_obj],
-            raw_images=[pil_image] # Keep raw image as PIL (resized or original? Collator might merge them)
+            raw_images=[pil_image]
         )
 
 
@@ -424,28 +474,29 @@ class SAM3TrainerNative:
         )
         
     def train(self):
-        train_data_path = self.config["training"]["train_data_path"]
-        train_path = Path(train_data_path)
-        train_ds = SimpleSAM3Dataset(root_dir=train_path.parent, image_set=train_path.name)
+        # Get data directory from config (should point to directory containing train/valid folders)
+        data_dir = self.config["training"]["data_dir"]
+
+        # Load datasets using COCO format
+        print(f"\nLoading training data from {data_dir}...")
+        train_ds = COCOSegmentDataset(data_dir=data_dir, split="train")
 
         # Check if validation data exists
         has_validation = False
         val_ds = None
-        
-        val_data_path = self.config["training"].get("val_data_path")
-        if val_data_path:
-            try:
-                val_path = Path(val_data_path)
-                val_ds = SimpleSAM3Dataset(root_dir=val_path.parent, image_set=val_path.name)
-                if len(val_ds) > 0:
-                    has_validation = True
-                    print(f"Found validation data in {val_data_path}")
-                else:
-                    print(f"Validation data path specified, but dataset at {val_data_path} is empty.")
-                    val_ds = None
-            except Exception as e:
-                print(f"Could not load validation data from {val_data_path}: {e}")
+
+        try:
+            print(f"\nLoading validation data from {data_dir}...")
+            val_ds = COCOSegmentDataset(data_dir=data_dir, split="valid")
+            if len(val_ds) > 0:
+                has_validation = True
+                print(f"Found validation data: {len(val_ds)} images")
+            else:
+                print(f"Validation dataset is empty.")
                 val_ds = None
+        except Exception as e:
+            print(f"Could not load validation data: {e}")
+            val_ds = None
 
         if not has_validation:
             val_ds = None
@@ -573,6 +624,7 @@ class SAM3TrainerNative:
                 val_losses = []
                 all_predictions = []
                 all_image_ids = []
+                running_img_id = 0  # Use running counter instead of batch_idx calculation
 
                 with torch.no_grad():
                     val_pbar = tqdm(val_loader, desc=f"Validation")
@@ -620,25 +672,18 @@ class SAM3TrainerNative:
                             final_stage = list(outputs_iter)[-1]  # Get last stage
                             final_outputs = final_stage[-1]  # Get last step
 
-                            # Debug output structure on first batch
-                            if batch_idx == 0 and epoch == 0:
-                                print(f"\n[DEBUG] Model output keys: {final_outputs.keys()}")
-                                print(f"[DEBUG] pred_logits shape: {final_outputs['pred_logits'].shape}")
-                                print(f"[DEBUG] pred_boxes shape: {final_outputs['pred_boxes'].shape}")
-                                print(f"[DEBUG] pred_masks shape: {final_outputs['pred_masks'].shape}")
-
                             # Get batch size from outputs
                             batch_size = final_outputs['pred_logits'].shape[0]
 
                             for i in range(batch_size):
-                                img_id = batch_idx * self.config["training"]["batch_size"] + i
-                                all_image_ids.append(img_id)
+                                all_image_ids.append(running_img_id)
                                 # Move predictions to CPU immediately to save GPU memory
                                 all_predictions.append({
                                     'pred_logits': final_outputs['pred_logits'][i].detach().cpu(),
                                     'pred_boxes': final_outputs['pred_boxes'][i].detach().cpu(),
                                     'pred_masks': final_outputs['pred_masks'][i].detach().cpu()
                                 })
+                                running_img_id += 1
 
                         batch_idx += 1
                         val_pbar.set_postfix({"val_loss": total_loss.item()})
@@ -711,7 +756,7 @@ class SAM3TrainerNative:
                         cgf1_50 = cgf1_results.get('cgF1_eval_segm_cgF1@0.5', 0.0)
                         cgf1_75 = cgf1_results.get('cgF1_eval_segm_cgF1@0.75', 0.0)
 
-                        print(f"\nSummary: mAP={map_segm:.4f} mAP@50={map50_segm:.4f} mAP@75={map75_segm:.4f} | cgF1={cgf1:.4f} cgF1@50={cgf1_50:.4f} cgF1@75={cgf1_75:.4f}")
+                        print(f"Metrics: mAP={map_segm:.4f} mAP@50={map50_segm:.4f} mAP@75={map75_segm:.4f} | cgF1={cgf1:.4f} cgF1@50={cgf1_50:.4f} cgF1@75={cgf1_75:.4f}")
 
                         # Clean up temporary files
                         temp_gt_file.unlink()
@@ -733,14 +778,15 @@ class SAM3TrainerNative:
                 del all_image_ids
                 torch.cuda.empty_cache()
 
-                # Save best model based on validation loss
+                # Save models based on validation performance
+                # Always save last model
+                save_lora_weights(self.model, str(out_dir / "last_lora_weights.pt"))
+
+                # Save best model only when validation loss improves
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     save_lora_weights(self.model, str(out_dir / "best_lora_weights.pt"))
-                    print(f"✓ Saved best model (val_loss: {avg_val_loss:.6f})")
-
-                # Save latest model
-                save_lora_weights(self.model, str(out_dir / "last_lora_weights.pt"))
+                    print(f"✓ New best model (val_loss: {avg_val_loss:.6f})")
 
                 # Clear CUDA cache before going back to training
                 torch.cuda.empty_cache()

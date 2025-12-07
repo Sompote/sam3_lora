@@ -144,31 +144,56 @@ If you see errors, review the [Troubleshooting](#troubleshooting) section.
 
 ### 1. Prepare Your Data
 
-Organize your dataset with images and annotations:
+Organize your dataset in **COCO format** with a single annotation file per split:
 
 ```
 data/
 ├── train/                    # Required
-│   ├── images/
-│   │   ├── img001.jpg
-│   │   └── img002.jpg
-│   └── annotations/
-│       ├── img001.json
-│       └── img002.json
-└── valid/                    # Optional but recommended
-    ├── images/
-    └── annotations/
+│   ├── img001.jpg
+│   ├── img002.jpg
+│   └── _annotations.coco.json
+├── valid/                    # Optional but recommended
+│   ├── img001.jpg
+│   ├── img002.jpg
+│   └── _annotations.coco.json
+└── test/                     # Optional
+    ├── img001.jpg
+    └── _annotations.coco.json
 ```
 
 > **Note**: Validation data (`data/valid/`) is **optional** but strongly recommended for monitoring training progress and preventing overfitting.
 
-**Annotation format** (JSON per image):
+**COCO Annotation Format** (`_annotations.coco.json`):
 ```json
 {
-  "bboxes": [[x1, y1, x2, y2], ...],
-  "masks": [[[x, y], ...], ...]
+  "images": [
+    {
+      "id": 0,
+      "file_name": "img001.jpg",
+      "height": 480,
+      "width": 640
+    }
+  ],
+  "annotations": [
+    {
+      "id": 1,
+      "image_id": 0,
+      "category_id": 1,
+      "bbox": [x, y, width, height],
+      "area": 1234,
+      "segmentation": [[x1, y1, x2, y2, ...]],
+      "iscrowd": 0
+    }
+  ],
+  "categories": [
+    {"id": 1, "name": "defect"}
+  ]
 }
 ```
+
+**Supported Segmentation Formats:**
+- **Polygon**: `"segmentation": [[x1, y1, x2, y2, ...]]` (list of polygons)
+- **RLE**: `"segmentation": {"counts": "...", "size": [h, w]}` (run-length encoded)
 
 ### 2. Train Your Model
 
@@ -185,21 +210,46 @@ python3 train_sam3_lora_native.py --config configs/full_lora_config.yaml
 Building SAM3 model...
 Applying LoRA...
 Applied LoRA to 64 modules
-Trainable params: 4,200,000 (~0.5%)  ← Should be ~1%!
-Starting training for 20 epochs...
-Training samples: 700, Validation samples: 100
+Trainable params: 11,796,480 (1.38%)
 
-Epoch 1: 100%|████████| 700/700 [12:00<00:00, loss=0.45]
-Validation: 100%|████████| 100/100 [01:30<00:00, val_loss=0.38]
-Epoch 1/20 - Validation Loss: 0.380000
-✓ Saved best model (val_loss: 0.380000)
+Loading training data from /workspace/data...
+Loaded COCO dataset: train split
+  Images: 778
+  Annotations: 1631
+  Categories: {0: 'CRACKS', 1: 'CRACKS', 2: 'JOINT', 3: 'LOCATION', 4: 'MARKING'}
 
-Epoch 2: 100%|████████| 700/700 [12:00<00:00, loss=0.32]
-Validation: 100%|████████| 100/100 [01:30<00:00, val_loss=0.29]
-Epoch 2/20 - Validation Loss: 0.290000
-✓ Saved best model (val_loss: 0.290000)
+Loading validation data from /workspace/data...
+Loaded COCO dataset: valid split
+  Images: 152
+  Annotations: 298
+Found validation data: 152 images
+Starting training for 200 epochs...
+Training samples: 778, Validation samples: 152
+
+Epoch 1: 100%|████████| 98/98 [07:47<00:00, loss=140]
+Validation: 100%|████████| 19/19 [00:48<00:00, val_loss=23.7]
+
+Epoch 1/200 - Validation Loss: 17.032280
+Computing instance segmentation metrics...
+Metrics: mAP=0.0392 mAP@50=0.1445 mAP@75=0.0037 | cgF1=0.0309 cgF1@50=0.1012 cgF1@75=0.0058
+✓ New best model (val_loss: 17.032280)
+
+Epoch 2: 100%|████████| 98/98 [07:24<00:00, loss=167]
+Validation: 100%|████████| 19/19 [00:46<00:00, val_loss=20.1]
+
+Epoch 2/200 - Validation Loss: 15.641912
+Computing instance segmentation metrics...
+Metrics: mAP=0.0456 mAP@50=0.1623 mAP@75=0.0042 | cgF1=0.0385 cgF1@50=0.1156 cgF1@75=0.0065
+✓ New best model (val_loss: 15.641912)
 ...
 ```
+
+**Validation Metrics Explained:**
+- **mAP**: Mean Average Precision at IoU 0.50:0.95 (standard COCO metric)
+- **mAP@50**: Mean Average Precision at IoU 0.50 (more lenient)
+- **mAP@75**: Mean Average Precision at IoU 0.75 (stricter)
+- **cgF1**: Category-agnostic F1 score (comprehensive metric)
+- **cgF1@50/75**: F1 at specific IoU thresholds
 
 ### 3. Run Inference
 
@@ -259,14 +309,20 @@ lora:
   apply_to_detr_decoder: false
 
 training:
-  batch_size: 1               # Adjust based on GPU memory
-  num_epochs: 20              # Training epochs
-  learning_rate: 5e-5         # Learning rate
+  data_dir: "/path/to/data"   # Root directory with train/valid/test folders
+  batch_size: 8               # Adjust based on GPU memory
+  num_epochs: 200             # Training epochs
+  learning_rate: 1e-5         # Learning rate (lower for stability)
   weight_decay: 0.01          # Weight decay
 
 output:
   output_dir: "outputs/my_model"
 ```
+
+**Important Notes:**
+- Use **generic text prompts** like `"object"` for best results (SAM models work better with simple terms)
+- The dataset automatically extracts category names from COCO annotations
+- Text prompts during training are class-agnostic to leverage pre-trained knowledge
 
 Then train:
 ```bash
@@ -276,17 +332,39 @@ python3 train_sam3_lora_native.py --config configs/my_config.yaml
 ### Model Checkpointing
 
 During training, two models are automatically saved:
-- **`best_lora_weights.pt`**: Best model based on validation loss (or copy of last if no validation)
-- **`last_lora_weights.pt`**: Model from the last epoch
+- **`best_lora_weights.pt`**: Best model based on validation loss (saved only when validation loss improves)
+- **`last_lora_weights.pt`**: Model from the last epoch (saved after every validation)
 
-**With validation data**: Training monitors validation loss and saves the best model automatically.
+**With validation data**: Training monitors validation loss, mAP, and cgF1 metrics. Best model is saved when validation loss decreases.
 
 **Without validation data**: Training continues normally but saves the last epoch as both files. You'll see:
 ```
-⚠️ No validation data found - training without validation
+⚠️  No validation data found - training without validation
 ...
-ℹ️ No validation data - consider adding data/valid/ for better model selection
+ℹ️  No validation data - consider adding data/valid/ for better model selection
 ```
+
+### Standalone Validation
+
+You can run validation separately on a trained model:
+
+```bash
+# Validate best model
+python3 validate_sam3_lora.py \
+  --config configs/full_lora_config.yaml \
+  --weights outputs/sam3_lora_full/best_lora_weights.pt
+
+# Validate on subset (for debugging)
+python3 validate_sam3_lora.py \
+  --config configs/full_lora_config.yaml \
+  --weights outputs/sam3_lora_full/best_lora_weights.pt \
+  --num-samples 10
+```
+
+This will compute:
+- Validation loss
+- COCO mAP metrics (IoU 0.50:0.95, 0.50, 0.75)
+- Category-agnostic F1 scores (cgF1)
 
 ### Training Tips
 
@@ -747,13 +825,18 @@ load_lora_weights(model, "my_lora_weights.pt")
 sam3_lora/
 ├── configs/
 │   └── full_lora_config.yaml      # Default training config
-├── data/
+├── data/                          # COCO format dataset
 │   ├── train/
-│   │   ├── images/                # Training images
-│   │   └── annotations/           # JSON annotations
-│   └── valid/
-│       ├── images/                # Validation images
-│       └── annotations/           # JSON annotations
+│   │   ├── img001.jpg             # Training images
+│   │   ├── img002.jpg
+│   │   └── _annotations.coco.json # COCO annotations
+│   ├── valid/
+│   │   ├── img001.jpg             # Validation images
+│   │   ├── img002.jpg
+│   │   └── _annotations.coco.json # COCO annotations
+│   └── test/
+│       ├── img001.jpg             # Test images (optional)
+│       └── _annotations.coco.json # COCO annotations
 ├── outputs/
 │   └── sam3_lora_full/
 │       ├── best_lora_weights.pt   # Best model (lowest val loss)
@@ -761,6 +844,7 @@ sam3_lora/
 ├── sam3/                          # SAM3 model library
 ├── lora_layers.py                 # LoRA implementation
 ├── train_sam3_lora_native.py      # Training script
+├── validate_sam3_lora.py          # Validation script
 ├── infer_sam.py                   # Inference script (recommended)
 ├── inference_lora.py              # Legacy inference script
 ├── README_INFERENCE.md            # Detailed inference guide
@@ -825,6 +909,23 @@ If you see 63%: Base model not frozen (bug fixed in latest version)
 - Create `data/valid/` directory with same structure as `data/train/`
 - Split your data: ~80% train, ~20% validation
 - Training will work without validation but you won't see validation metrics
+
+**8. Annotation Format Errors**
+```
+FileNotFoundError: COCO annotation file not found: /path/to/data/train/_annotations.coco.json
+```
+**Solution:**
+- Ensure your data is in COCO format with `_annotations.coco.json` in each split folder
+- Each split (train/valid/test) needs its own annotation file
+- Images should be in the same directory as the annotation file
+- Supported segmentation formats: polygon lists or RLE dictionaries
+
+**9. mAP Decreasing During Training**
+**Solution:**
+- This was likely caused by using domain-specific text prompts (e.g., "crack", "joint")
+- The code now uses generic `"object"` prompts for better stability
+- SAM models work best with simple, generic terms they were trained on
+- If you modified the code, ensure `query_text="object"` in the dataset class
 
 ### Performance Benchmarks
 
