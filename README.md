@@ -374,15 +374,13 @@ After training completes, evaluate your model:
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid
+  --val_data_dir /workspace/data2/valid
 
 # Evaluate on test set
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split test
+  --val_data_dir /workspace/data2/test
 ```
 
 **Expected Output:**
@@ -439,16 +437,14 @@ Category-agnostic F1 Scores:
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --prob-threshold 0.5
 
 # More permissive (more predictions, lower confidence)
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --prob-threshold 0.2
 ```
 
@@ -458,8 +454,7 @@ python3 validate_sam3_lora.py \
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --merge \
   --merge-iou 0.15
 
@@ -467,8 +462,7 @@ python3 validate_sam3_lora.py \
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --merge \
   --merge-iou 0.05 \
   --prob-threshold 0.5
@@ -480,16 +474,14 @@ python3 validate_sam3_lora.py \
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --nms-iou 0.5
 
 # Less aggressive NMS (keep more overlapping segments)
 python3 validate_sam3_lora.py \
   --config configs/full_lora_config.yaml \
   --weights outputs/sam3_lora_full/best_lora_weights.pt \
-  --data_dir /workspace/data2 \
-  --split valid \
+  --val_data_dir /workspace/data2/valid \
   --nms-iou 0.8
 ```
 
